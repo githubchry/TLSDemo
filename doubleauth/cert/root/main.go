@@ -21,17 +21,17 @@ import (
 const (
 	organization = "CHRY"
 	certFileName = "ca.cer"
-	keyFileName =  "ca.key"
+	keyFileName  = "ca.key"
 )
 
 var (
-	host       = flag.String("host", 			"chry-root", 	"用逗号分隔的主机名和IP来生成证书")
-	validFrom  = flag.String("start-date", 	"", 				"创建日期格式为Jan 1 15:04:05 2011")
-	validFor   = flag.Duration("duration", 	3650*24*time.Hour, 		"该证书的有效期")
-	isCA       = flag.Bool("ca", 				true, 			"该证书是否应该是它自己的证书权威机构")
-	rsaBits    = flag.Int("rsa-bits", 		2048, 			"要生成的RSA密钥的大小. 如果设置了--ecdsa-curve，则忽略")
-	ecdsaCurve = flag.String("ecdsa-curve", 	"", 				"用ECDSA曲线生成密钥. 有效值: P224, P256 (推荐), P384, P521")
-	ed25519Key = flag.Bool("ed25519", 		false, 			"生成Ed25519密钥")
+	host       = flag.String("host", "chry-root", "用逗号分隔的主机名和IP来生成证书")
+	validFrom  = flag.String("start-date", "", "创建日期格式为Jan 1 15:04:05 2011")
+	validFor   = flag.Duration("duration", 3650*24*time.Hour, "该证书的有效期")
+	isCA       = flag.Bool("ca", true, "该证书是否应该是它自己的证书权威机构")
+	rsaBits    = flag.Int("rsa-bits", 2048, "要生成的RSA密钥的大小. 如果设置了--ecdsa-curve，则忽略")
+	ecdsaCurve = flag.String("ecdsa-curve", "", "用ECDSA曲线生成密钥. 有效值: P224, P256 (推荐), P384, P521")
+	ed25519Key = flag.Bool("ed25519", false, "生成Ed25519密钥")
 )
 
 func publicKey(priv interface{}) interface{} {

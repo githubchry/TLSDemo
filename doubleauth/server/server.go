@@ -2,24 +2,20 @@ package main
 
 import (
 	"bufio"
-	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
-	"flag"
 	"io/ioutil"
 	"log"
 	"net"
-	"time"
 )
-
 
 const (
-	rootCertFileName = "../../cert/ca.cer"
-	serverCertFileName = "../../cert/server/server.cer"
-	serverKeyFileName  = "../../cert/server/server.key"
+	rootCertFileName   = "ca.cer"
+	serverCertFileName = "server.cer"
+	serverKeyFileName  = "server.key"
 )
 
-func process(conn net.Conn) {
+func echo(conn net.Conn) {
 	defer conn.Close()
 	for {
 		reader := bufio.NewReader(conn)
@@ -36,40 +32,41 @@ func process(conn net.Conn) {
 }
 
 func main() {
-	flag.Parse()
-	buf, err := ioutil.ReadFile(rootCertFileName)
+
+	// log打印设置: Lshortfile文件名+行号  LstdFlags日期加时间
+	log.SetFlags(log.Llongfile | log.LstdFlags | log.Lmicroseconds)
+
+	rootCertBytes, err := ioutil.ReadFile(rootCertFileName)
 	if err != nil {
 		log.Fatal(err)
 	}
 
 	pool := x509.NewCertPool()
-	pool.AppendCertsFromPEM(buf)
+	pool.AppendCertsFromPEM(rootCertBytes)
 
-	crt, err := tls.LoadX509KeyPair(serverCertFileName, serverKeyFileName)
+	cert, err := tls.LoadX509KeyPair(serverCertFileName, serverKeyFileName)
 	if err != nil {
 		log.Fatalln(err.Error())
 	}
 
 	tlsConfig := &tls.Config{
-		Certificates:       []tls.Certificate{crt},
-		ClientAuth:         tls.RequireAndVerifyClientCert,
-		ClientCAs:          pool,
+		Certificates: []tls.Certificate{cert},
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+		ClientCAs:    pool,
 	}
 
-	tlsConfig.Time = time.Now
-
-	tlsConfig.Rand = rand.Reader
-	l, err := tls.Listen("tcp", ":8888", tlsConfig)
+	listener, err := tls.Listen("tcp", ":8864", tlsConfig)
 	if err != nil {
 		log.Fatalln(err.Error())
 	}
+
 	for {
-		conn, err := l.Accept()
+		conn, err := listener.Accept()
 		if err != nil {
 			log.Println(err.Error())
 			continue
 		} else {
-			go process(conn)
+			go echo(conn)
 		}
 	}
 }

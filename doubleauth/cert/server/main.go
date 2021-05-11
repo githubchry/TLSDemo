@@ -20,22 +20,22 @@ import (
 )
 
 const (
-	organization = "CHRY"
-	rootCertFileName   = "../ca.cer"
-	rootKeyFileName    = "../ca.key"
-	clientCertFileName = "client.cer"
-	clientKeyFileName  = "client.key"
-	clientCsrFileName  = "client.csr"
+	organization       = "CHRY"
+	rootCertFileName   = "ca.cer"
+	rootKeyFileName    = "ca.key"
+	serverCertFileName = "server.cer"
+	serverKeyFileName  = "server.key"
+	serverCsrFileName  = "server.csr"
 )
 
 var (
-	host       = flag.String("host", 			"chry-client", 	"用逗号分隔的主机名和IP来生成证书")
-	validFrom  = flag.String("start-date", 	"", 				"创建日期格式为Jan 1 15:04:05 2011")
-	validFor   = flag.Duration("duration", 	3650*24*time.Hour, 		"该证书的有效期")
-	isCA       = flag.Bool("ca", 				false, 			"该证书是否应该是它自己的证书权威机构")
-	rsaBits    = flag.Int("rsa-bits", 		2048, 			"要生成的RSA密钥的大小. 如果设置了--ecdsa-curve，则忽略")
-	ecdsaCurve = flag.String("ecdsa-curve", 	"", 				"用ECDSA曲线生成密钥. 有效值: P224, P256 (推荐), P384, P521")
-	ed25519Key = flag.Bool("ed25519", 		false, 			"生成Ed25519密钥")
+	host       = flag.String("host", "chry-server", "用逗号分隔的主机名和IP来生成证书")
+	validFrom  = flag.String("start-date", "", "创建日期格式为Jan 1 15:04:05 2011")
+	validFor   = flag.Duration("duration", 3650*24*time.Hour, "该证书的有效期")
+	isCA       = flag.Bool("ca", false, "该证书是否应该是它自己的证书权威机构")
+	rsaBits    = flag.Int("rsa-bits", 2048, "要生成的RSA密钥的大小. 如果设置了--ecdsa-curve，则忽略")
+	ecdsaCurve = flag.String("ecdsa-curve", "", "用ECDSA曲线生成密钥. 有效值: P224, P256 (推荐), P384, P521")
+	ed25519Key = flag.Bool("ed25519", false, "生成Ed25519密钥")
 )
 
 func publicKey(priv interface{}) interface{} {
@@ -52,9 +52,8 @@ func publicKey(priv interface{}) interface{} {
 }
 
 func main() {
-
 	// log打印设置: Lshortfile文件名+行号  LstdFlags日期加时间
-	log.SetFlags(log.Llongfile | log.LstdFlags)
+	log.SetFlags(log.Llongfile | log.LstdFlags | log.Lmicroseconds)
 
 	flag.Parse()
 
@@ -94,12 +93,13 @@ func main() {
 	// authentication.
 	if _, isRSA := priv.(*rsa.PrivateKey); isRSA {
 		keyUsage |= x509.KeyUsageKeyEncipherment
+		log.Println("keyUsage |= x509.KeyUsageKeyEncipherment")
 	}
 
 	// 保存私钥到文件
-	keyOut, err := os.OpenFile(clientKeyFileName, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	keyOut, err := os.OpenFile(serverKeyFileName, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
-		log.Fatalf("Failed to open %s for writing: %v", clientKeyFileName, err)
+		log.Fatalf("Failed to open %s for writing: %v", serverKeyFileName, err)
 		return
 	}
 	privBytes, err := x509.MarshalPKCS8PrivateKey(priv)
@@ -107,12 +107,12 @@ func main() {
 		log.Fatalf("Unable to marshal private key: %v", err)
 	}
 	if err := pem.Encode(keyOut, &pem.Block{Type: "PRIVATE KEY", Bytes: privBytes}); err != nil {
-		log.Fatalf("Failed to write data to %s: %v", clientKeyFileName, err)
+		log.Fatalf("Failed to write data to %s: %v", serverKeyFileName, err)
 	}
 	if err := keyOut.Close(); err != nil {
-		log.Fatalf("Error closing %s: %v", clientKeyFileName, err)
+		log.Fatalf("Error closing %s: %v", serverKeyFileName, err)
 	}
-	log.Println("已经生成私钥:", clientKeyFileName)
+	log.Println("已经生成私钥:", serverKeyFileName)
 
 	//=========================================================================
 	csrtmpl := x509.CertificateRequest{
@@ -131,9 +131,9 @@ func main() {
 	}
 
 	// 生成证书请求
-	csrOut, err := os.OpenFile(clientCsrFileName, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	csrOut, err := os.OpenFile(serverCsrFileName, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
-		log.Fatalf("Failed to open %s for writing: %v", clientCsrFileName, err)
+		log.Fatalf("Failed to open %s for writing: %v", serverCsrFileName, err)
 		return
 	}
 
@@ -147,9 +147,9 @@ func main() {
 	}
 
 	if err := csrOut.Close(); err != nil {
-		log.Fatalf("Error closing %s: %v", clientCsrFileName, err)
+		log.Fatalf("Error closing %s: %v", serverCsrFileName, err)
 	}
-	log.Println("已经生成证书请求:", clientCsrFileName)
+	log.Println("已经生成证书请求:", serverCsrFileName)
 
 	// 基于CA证书签发服务端证书公钥
 	//解析根证书
@@ -202,7 +202,7 @@ func main() {
 		NotAfter:  notAfter,
 
 		KeyUsage:              keyUsage,
-		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
 		BasicConstraintsValid: true,
 	}
 
@@ -226,7 +226,7 @@ func main() {
 		log.Fatalf("Failed to create certificate: %v", err)
 	}
 
-	certOut, err := os.Create(clientCertFileName)
+	certOut, err := os.Create(serverCertFileName)
 	if err != nil {
 		log.Fatalf("Failed to open cert.pem for writing: %v", err)
 	}
@@ -236,5 +236,5 @@ func main() {
 	if err := certOut.Close(); err != nil {
 		log.Fatalf("Error closing cert.pem: %v", err)
 	}
-	log.Println("已经签发公钥", clientCertFileName)
+	log.Println("已经签发公钥", serverCertFileName)
 }

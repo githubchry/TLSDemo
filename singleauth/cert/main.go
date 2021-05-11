@@ -21,17 +21,28 @@ import (
 const (
 	organization = "CHRY"
 	certFileName = "cacert.cer"
-	keyFileName =  "capriv.key"
+	keyFileName  = "capriv.key"
 )
 
+/*
+golang标准库提供了flag包来处理命令行参数
+1. 定义flag字段：字段名/默认值/帮助描述
+2. 调用flag.Parse()解析所有命令行参数到预定义好的flag字段里面
+3. 如果解析失败则会打印所有flag的usage
+示例：
+go run server.go  使用默认参数
+go run server.go -host=127.0.0.1 -ca=false 指定参数
+go run server.go -ca=123 无法解析123为bool，打印帮助描述
+*/
 var (
-	host       = flag.String("host", 			"chry", 		"用逗号分隔的主机名和IP来生成证书")
-	validFrom  = flag.String("start-date", 	"", 				"创建日期格式为Jan 1 15:04:05 2011")
-	validFor   = flag.Duration("duration", 	3650*24*time.Hour, 		"该证书的有效期")
-	isCA       = flag.Bool("ca", 				false, 			"该证书是否应该是它自己的证书权威机构")
-	rsaBits    = flag.Int("rsa-bits", 		2048, 			"要生成的RSA密钥的大小. 如果设置了--ecdsa-curve，则忽略")
-	ecdsaCurve = flag.String("ecdsa-curve", 	"", 				"用ECDSA曲线生成密钥. 有效值: P224, P256 (推荐), P384, P521")
-	ed25519Key = flag.Bool("ed25519", 		false, 			"生成Ed25519密钥")
+	host      = flag.String("host", "192.168.0.160,192.168.1.99,www.chenruiyun.com", "用逗号分隔的主机名和IP来生成证书,不能有空格")
+	validFrom = flag.String("start-date", "", "默认创建日期格式为Jan 1 15:04:05 2011")
+	validFor  = flag.Duration("duration", 3650*24*time.Hour, "该证书的有效期")
+	isCA      = flag.Bool("ca", true, "该证书是否应该是它自己的证书权威机构")
+	// 以下算法三选一 程序判断优先级： ecdsaCurve > ed25519Key > rsaBits
+	rsaBits    = flag.Int("rsa-bits", 2048, "要生成的RSA密钥的大小. 如果设置了--ecdsa-curve，则忽略")
+	ecdsaCurve = flag.String("ecdsa-curve", "", "用ECDSA曲线生成密钥. 有效值: P224, P256 (推荐), P384, P521.")
+	ed25519Key = flag.Bool("ed25519", false, "生成Ed25519密钥")
 )
 
 func publicKey(priv interface{}) interface{} {
@@ -48,12 +59,17 @@ func publicKey(priv interface{}) interface{} {
 }
 
 func main() {
+	// log打印设置: Lshortfile文件名+行号  LstdFlags日期加时间
+	log.SetFlags(log.Llongfile | log.LstdFlags | log.Lmicroseconds)
+
+	//解析命令行参数到定义的flag
 	flag.Parse()
 
 	if len(*host) == 0 {
 		log.Fatalf("Missing required --host parameter")
 	}
 
+	// 生成证书私钥
 	var priv interface{}
 	var err error
 	switch *ecdsaCurve {
@@ -78,12 +94,29 @@ func main() {
 		log.Fatalf("Failed to generate private key: %v", err)
 	}
 
-	// ECDSA, ED25519 and RSA subject keys should have the DigitalSignature
-	// KeyUsage bits set in the x509.Certificate template
+	// 至此私钥已经生成好了，下面保存到文件
+	keyOut, err := os.OpenFile(keyFileName, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+	if err != nil {
+		log.Fatalf("Failed to open key.pem for writing: %v", err)
+		return
+	}
+	privBytes, err := x509.MarshalPKCS8PrivateKey(priv)
+	if err != nil {
+		log.Fatalf("Unable to marshal private key: %v", err)
+	}
+	if err := pem.Encode(keyOut, &pem.Block{Type: "PRIVATE KEY", Bytes: privBytes}); err != nil {
+		log.Fatalf("Failed to write data to key.pem: %v", err)
+	}
+	if err := keyOut.Close(); err != nil {
+		log.Fatalf("Error closing %s: %v", keyFileName, err)
+	}
+	log.Printf("生成%s证书私钥并保存到文件：", keyFileName)
+
+	// 准备生成公钥
+
+	// ECDSA、ED25519和RSA主体密钥应在x509.Certificate模板中设置DigitalSignature KeyUsage位
 	keyUsage := x509.KeyUsageDigitalSignature
-	// Only RSA subject keys should have the KeyEncipherment KeyUsage bits set. In
-	// the context of TLS this KeyUsage is particular to RSA key exchange and
-	// authentication.
+	//只有RSA主题密钥需要设置KeyEncipherment KeyUsage位。在TLS上下文中，这个KeyUsage是RSA密钥交换和身份验证特有的。
 	if _, isRSA := priv.(*rsa.PrivateKey); isRSA {
 		keyUsage |= x509.KeyUsageKeyEncipherment
 	}
@@ -111,8 +144,8 @@ func main() {
 		Subject: pkix.Name{
 			Organization: []string{organization},
 		},
-		NotBefore: notBefore,
-		NotAfter:  notAfter,
+		NotBefore: notBefore, //证书有效期开始时间
+		NotAfter:  notAfter,  //证书有效期结束时间
 
 		KeyUsage:              keyUsage,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
@@ -151,20 +184,4 @@ func main() {
 	}
 	log.Println("wrote", certFileName)
 
-	keyOut, err := os.OpenFile(keyFileName, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
-	if err != nil {
-		log.Fatalf("Failed to open key.pem for writing: %v", err)
-		return
-	}
-	privBytes, err := x509.MarshalPKCS8PrivateKey(priv)
-	if err != nil {
-		log.Fatalf("Unable to marshal private key: %v", err)
-	}
-	if err := pem.Encode(keyOut, &pem.Block{Type: "PRIVATE KEY", Bytes: privBytes}); err != nil {
-		log.Fatalf("Failed to write data to key.pem: %v", err)
-	}
-	if err := keyOut.Close(); err != nil {
-		log.Fatalf("Error closing %s: %v", keyFileName, err)
-	}
-	log.Println("wrote", keyFileName)
 }
